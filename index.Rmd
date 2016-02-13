@@ -1,0 +1,155 @@
+---
+title: "Practical Machine Learning Project"
+author: "Hossein Taghinejad"
+date: "February 12, 2016"
+output: html_document
+---
+
+## Introduction
+
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement - a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: [http://groupware.les.inf.puc-rio.br/har] (see the section on the Weight Lifting Exercise Dataset).  
+
+## Objective
+
+The goal of this project is to predict the manner in which the subjects did the exercise. This is the "classe" variable in the training set which is a factor variable with 5 levels :    
+
+.Level A: exactly according to the specification,  
+
+.Level B: throwing the elbows to the front,    
+
+.Level c: lifting the dumbbell only halfway,    
+
+.Level D: lowering the dumbbell only halfway,    
+
+.Level E: throwing the hips to the front.   
+  
+We use two different models: Random Forest and Desicion Tree. Our choice of the final model is based on the accuracy and the out-of-sample error. Before fitting our models, we need to preprocess and clean the data by eliminating unnecessary variables and and those variables which have more than 50% of missing values. We also use PCA method to eliminate the correlations.  
+
+## Loading packages and setting seed   
+
+For the following analysis and prediction, we need the following packages:
+
+```{r, warning=FALSE}
+library(caret)
+library(randomForest)
+library(e1071)
+library(rpart)
+library(kernlab)
+```
+
+We also need to set the seed in order to be able to reproduce the results:
+
+```{r}
+set.seed(1919)
+```
+
+## Getting, Cleaning and Preprocessing the Data
+
+### Loading the Data
+
+The training and test set can found on the following URL:
+
+```{r}
+trainUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+testUrl <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+```
+
+Let's load the data on the memory:
+
+```{r}
+training <- read.csv(url(trainUrl), na.strings=c("NA","#DIV/0!",""))
+testing <- read.csv(url(testUrl), na.strings=c("NA","#DIV/0!",""))
+```
+
+### Cleaning the Data
+
+We need to execute the same preprocessings on both test set and training set. The first 7 variables are identifiers and are not suitable to use in our predictions:
+
+```{r}
+training=training[,-c(1:7)]
+testing=testing[,-c(1:7)]
+```
+
+In the next step, we remove all the variables which have more than 50% missing values:
+
+```{r}
+#Training set
+mis.v.training <- sapply(colnames(training), function(x) if(sum(is.na(training[, x])) > 0.50*nrow(training))    {return(TRUE)
+      }else{
+           return(FALSE)
+       }
+ )
+training= training[, !mis.v.training]
+#Test set
+mis.v.test <- sapply(colnames(testing), function(x) if(sum(is.na(testing[, x])) > 0.50*nrow(testing))    {return(TRUE)
+}else{
+      return(FALSE)
+}
+)
+testing= testing[, !mis.v.test]
+```
+
+### Cross validation
+
+We are goinf to subsample the training set into two sets: the myTraining set that contains 75% of the original data and the Mytesting set which contains 25% of the original data:
+```{r}
+inTrain <- createDataPartition(y=training$classe, p=0.75, list=FALSE)
+myTraining <- training[inTrain, ]; myTesting <- training[-inTrain, ]
+dim(myTraining); dim(myTesting)
+```
+### PCA
+
+Now we need to learn about the correlation between variables:
+```{r}
+InCor=findCorrelation(cor(myTraining[, -53]), cutoff=0.8)
+names(myTraining)[InCor]
+```
+As you can see, some of the variables are highly correlated. We are going to use PCA to solve this problem:
+
+```{r}
+preProc <- preProcess(myTraining[,1:52],method="pca",thresh=.95)
+myTrainingpc <- predict(preProc,myTraining[,1:52])
+myTrainingpc$class=myTraining[,53]
+dim(myTrainingpc)
+```
+We need to conduct the same process on myTestin and testing set:
+```{r}
+myTestingpc <- predict(preProc,myTesting[,1:52])
+myTestingpc$class=myTesting[,53]
+testingpc <- predict(preProc,testing[,1:52])
+testingpc$problemId=testing[,53]
+```
+
+## Prediction
+### Decision Tree
+
+The first model we fit in the data set is based on Desicion Tree method. 
+
+```{r}
+DT <- rpart(classe ~ ., data=myTraining, method="class")
+predictDT=predict(DT,myTesting,type = "class")
+confusionMatrix(predictDT,myTesting$classe)
+```
+
+The second method we choose for our prediction is Random Forest.
+
+```{r}
+Rforest=randomForest(class~.,data=myTrainingpc)
+predictionsRforest <- predict(Rforest, myTestingpc, type = "class")
+confusionMatrix(predictionsRforest, myTesting$classe)
+
+```
+
+Based on comparing the accuracy, Random Forest is the better option and we are goinf to use that model for our prediction.
+
+## Final Step
+
+Now we are going to apply our Random Forest model to our testing set and record the result: 
+
+```{r}
+finalPrediction=predict(Rforest, testingpc, type = "class")
+finalPrediction
+```
+## Conclusion
+
+The Random Forest is the best model fit and it gives us 100% correct predictions on the test set. 
